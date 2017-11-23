@@ -13,6 +13,7 @@ TCHAR szClassName[] = TEXT("Window");
 
 #define IDC_LIST 201
 #define IDC_EDIT 202
+#define IDC_COMBOBOX 203
 #define SEMAPHORE_NUM 2
 #define WM_ENDTHREAD (WM_APP+100)
 
@@ -34,11 +35,19 @@ struct ListItemData
 	static TCHAR*lpszDirectory;
 	static HWND hWnd;
 	static HWND hList;
+	typedef enum {
+		// 同名のファイルが存在しているときの処理
+		FILE_DONOTHING, // 何もしない
+		FILE_OVERWRITE, // 上書き
+		FILE_RENAME, // 連番で別名を振る
+	} FILEWRITEMODE;
+	static FILEWRITEMODE nFileWriteMode;
 };
 
 TCHAR* ListItemData::lpszDirectory;
 HWND ListItemData::hWnd;
 HWND ListItemData::hList;
+ListItemData::FILEWRITEMODE ListItemData::nFileWriteMode;
 
 static TCHAR *url2filename(TCHAR *url)
 {
@@ -91,11 +100,11 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 	HANDLE			FindHandle;
 	WIN32_FIND_DATA	FindData;
 	FindHandle = FindFirstFile(szFilePath, &FindData);
-	if ((FindHandle == INVALID_HANDLE_VALUE))
+	if (FindHandle == INVALID_HANDLE_VALUE || ListItemData::nFileWriteMode == ListItemData::FILE_OVERWRITE)
 	{
-		::FindClose(FindHandle);
+		FindClose(FindHandle);
 	}
-	else
+	else if (ListItemData::nFileWriteMode == ListItemData::FILE_RENAME)
 	{
 		TCHAR fname[_MAX_FNAME];
 		TCHAR ext[_MAX_EXT];
@@ -110,7 +119,13 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 		lstrcpy(szFilePath, szBuf);
 		FindClose(FindHandle);
 	}
-	FILE *fno;	
+	else if (ListItemData::nFileWriteMode == ListItemData::FILE_DONOTHING)
+	{
+		FindClose(FindHandle);
+		pListItemData->state = 3;
+		goto END2;
+	}	
+	FILE *fno;
 	if (_wfopen_s(&fno, szFilePath, L"wb") == 0)
 	{
 		HttpQueryInfo(hFile,HTTP_QUERY_CONTENT_LENGTH,szBuf,&BufSizeTextSize,0);
@@ -175,6 +190,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	static HWND hEdit;
 	static HWND hList;
+	static HWND hCombobox;
 	static DWORD iNextListItem = 0;
 	static DWORD iTotalListItem = 0;
 	static DWORD iEndListItem = 0;
@@ -191,10 +207,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			PathAddBackslash(szModulePath);
 			SetWindowText(hEdit, szModulePath);
 		}
+		hCombobox = CreateWindow(L"COMBOBOX", 0, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | CBS_DROPDOWNLIST, 0, 0, 0, 0, hWnd, (HMENU)IDC_COMBOBOX, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		{
+			SendMessage(hCombobox, CB_ADDSTRING, 0, (LPARAM)TEXT("何もしない"));
+			SendMessage(hCombobox, CB_ADDSTRING, 0, (LPARAM)TEXT("上書き"));
+			SendMessage(hCombobox, CB_ADDSTRING, 0, (LPARAM)TEXT("別名保存"));
+			SendMessage(hCombobox, CB_SETCURSEL, 0, 0);
+		}
 		hList = CreateWindowEx(WS_EX_CLIENTEDGE, L"LISTBOX", 0, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | LBS_NOINTEGRALHEIGHT | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS, 0, 0, 0, 0, hWnd, (HMENU)IDC_LIST, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		ListItemData::lpszDirectory = szDirectory;
 		ListItemData::hWnd = hWnd;
 		ListItemData::hList = hList;
+		ListItemData::nFileWriteMode = ListItemData::FILE_DONOTHING;
 		break;
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
@@ -204,6 +228,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			{
 				GetWindowText(hEdit, szDirectory, _countof(szDirectory));
 				PathAddBackslash(szDirectory);
+			}
+			return 0;
+		case IDC_COMBOBOX:
+			if (HIWORD(wParam) == CBN_SELCHANGE)
+			{
+				const int nIndex = (int)SendMessage(hCombobox, CB_GETCURSEL, 0, 0);
+				if (nIndex == CB_ERR)
+				{
+					SendMessage(hCombobox, CB_SETCURSEL, 0, 0);
+					ListItemData::nFileWriteMode = ListItemData::FILE_DONOTHING;
+				}
+				else
+				{
+					switch (nIndex)
+					{
+					case 0:
+						ListItemData::nFileWriteMode = ListItemData::FILE_DONOTHING;
+						break;
+					case 1:
+						ListItemData::nFileWriteMode = ListItemData::FILE_OVERWRITE;
+						break;
+					case 2:
+						ListItemData::nFileWriteMode = ListItemData::FILE_RENAME;
+						break;
+					}
+				}
 			}
 			return 0;
 		case ID_RUN:
@@ -311,6 +361,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case 0:SetTextColor(lpdis->hDC, RGB(192, 192, 192)); lstrcpy(szTemp, L"待機中"); break;
 			case 1:wsprintf(szTemp, L"%d%%", p->data); break;
 			case 2:SetTextColor(lpdis->hDC, RGB(0, 192, 0)); lstrcpy(szTemp, L"完了"); break;
+			case 3:SetTextColor(lpdis->hDC, RGB(0, 192, 0)); lstrcpy(szTemp, L"同名"); break;
 			}
 			DrawText(lpdis->hDC, szTemp, -1, &lpdis->rcItem, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 		}
@@ -333,8 +384,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_SIZE:
-		MoveWindow(hEdit, 4, 4, LOWORD(lParam) - 8, 32, TRUE);
+		MoveWindow(hEdit, 4, 4, LOWORD(lParam) - 4 - 128 - 8, 32, TRUE);
 		MoveWindow(hList, 4, 32 + 8, LOWORD(lParam) - 8, HIWORD(lParam) - 32 - 8 - 4, TRUE);
+		MoveWindow(hCombobox, LOWORD(lParam) - 4 - 128, 4, 128, 512, TRUE);
 		break;
 	case WM_CLOSE:
 		DestroyWindow(hWnd);
