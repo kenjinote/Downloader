@@ -331,24 +331,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			{
 				break;
 			}
-			TCHAR szText[MAX_PATH];
-			HBRUSH hBrush;
-			SendMessage(hList, LB_GETTEXT, lpdis->itemID, (LPARAM)szText);
-			if ((lpdis->itemState)&(ODS_SELECTED))
 			{
-				hBrush = CreateSolidBrush(GetSysColor(COLOR_HIGHLIGHT));
-				SetBkColor(lpdis->hDC, GetSysColor(COLOR_HIGHLIGHT));
-				SetTextColor(lpdis->hDC, GetSysColor(COLOR_HIGHLIGHTTEXT));
+				HBRUSH hBrush;
+				if ((lpdis->itemState) & (ODS_SELECTED))
+				{
+					hBrush = CreateSolidBrush(GetSysColor(COLOR_HIGHLIGHT));
+					SetBkColor(lpdis->hDC, GetSysColor(COLOR_HIGHLIGHT));
+					SetTextColor(lpdis->hDC, GetSysColor(COLOR_HIGHLIGHTTEXT));
+				}
+				else
+				{
+					hBrush = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
+					SetBkColor(lpdis->hDC, GetSysColor(COLOR_WINDOW));
+					SetTextColor(lpdis->hDC, GetSysColor(COLOR_WINDOWTEXT));
+				}
+				FillRect(lpdis->hDC, &lpdis->rcItem, hBrush);
+				DeleteObject(hBrush);
 			}
-			else
+
+			DWORD dwTextLength = (DWORD)SendMessage(hList, LB_GETTEXTLEN, lpdis->itemID, 0);
+			if (LB_ERR != dwTextLength)
 			{
-				hBrush = CreateSolidBrush(GetSysColor(COLOR_WINDOW));
-				SetBkColor(lpdis->hDC, GetSysColor(COLOR_WINDOW));
-				SetTextColor(lpdis->hDC, GetSysColor(COLOR_WINDOWTEXT));
+				LPTSTR lpszText = new TCHAR[dwTextLength + 1];
+				SendMessage(hList, LB_GETTEXT, lpdis->itemID, (LPARAM)lpszText);
+				DrawText(lpdis->hDC, lpszText, -1, &lpdis->rcItem, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+				delete[] lpszText;
 			}
-			FillRect(lpdis->hDC, &lpdis->rcItem, hBrush);
-			DeleteObject(hBrush);
-			DrawText(lpdis->hDC, szText, -1, &lpdis->rcItem, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
 			ListItemData *p = (ListItemData*)SendMessage(lpdis->hwndItem, LB_GETITEMDATA, lpdis->itemID, 0);
 			TCHAR szTemp[32];
 			switch (p->state)
