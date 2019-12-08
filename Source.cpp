@@ -423,7 +423,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int 
 		0,
 		DLGWINDOWEXTRA,
 		hInstance,
-		0,
+		LoadIcon(hInstance,MAKEINTRESOURCE(IDI_ICON1)),
 		LoadCursor(0,IDC_ARROW),
 		0,
 		MAKEINTRESOURCE(IDR_MENU1),
